@@ -6,8 +6,12 @@ using System.IO;
 using OfficeOpenXml;
 using System.Text;
 using System.Linq;
-
-
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Net;
+using dotenv.net;
+using dotenv.net.Utilities;
 
 public partial class Form1 : Form
 {
@@ -15,12 +19,14 @@ public partial class Form1 : Form
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool AllocConsole();
     private WebBrowser fileContentsBrowser;
+    
 
     public Form1()
     {
         AllocConsole();
         InitializeComponent();
-
+        DotEnv.Load();
+        
         // Create and add a WebBrowser to display file contents as HTML
         fileContentsBrowser = new WebBrowser();
         fileContentsBrowser.Location = new System.Drawing.Point(50, 250);
@@ -31,7 +37,34 @@ public partial class Form1 : Form
         ExcelPackage.License.SetNonCommercialPersonal("test");
     }
 
-    private void uploadButton_Click(object sender, EventArgs e)
+    private async Task<string> GetRequestAsync(string url)
+    {
+        using (HttpClient client = new HttpClient())
+        {
+            HttpResponseMessage response = await client.GetAsync(url);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync();
+        }
+    }
+
+    private async Task PrintGetRequestToConsole(string url)
+    {
+        try
+        {
+            string response = await GetRequestAsync(url);
+            Console.WriteLine("Get Response:");
+            Console.WriteLine();
+            Console.WriteLine(response);
+            Console.WriteLine();
+            Console.WriteLine();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error during GET: " + ex.Message);
+        }
+    }
+
+    private async void uploadButton_Click(object sender, EventArgs e)
     {
         if (openFileDialog.ShowDialog() == DialogResult.OK)
         {
@@ -84,6 +117,7 @@ public partial class Form1 : Form
                         int rows = worksheet.Dimension.Rows;
                         int cols = worksheet.Dimension.Columns;
                         var sb = new StringBuilder();
+                        Dictionary<int, string> addrs = new Dictionary<int, string>();
                         sb.Append("<html><body><table border='1' style='border-collapse:collapse;'>");
 
                         //didnt notice this starts at one, this is actually cursed
@@ -98,11 +132,32 @@ public partial class Form1 : Form
 
                                 if (r > 1)
                                 {
-                                    Console.WriteLine(System.Net.WebUtility.HtmlEncode(cellText) + " ");
+                                    //add dictionary here to parse address info
+                                    //Console.WriteLine(r);
+                                    //Console.WriteLine(System.Net.WebUtility.HtmlEncode(cellText) + " ");
+                                    if (addrs.ContainsKey(r))
+                                    {
+                                        addrs[r] = addrs[r] + " " + System.Net.WebUtility.HtmlEncode(cellText) + " ";
+                                    }
+                                    else
+                                    {
+                                        addrs[r] = System.Net.WebUtility.HtmlEncode(cellText) + " ";
+                                    }
                                 }
-                                
+
                             }
                             sb.Append("</tr>");
+                        }
+                        string url = "";
+                        string fullLink = EnvReader.GetStringValue("LOCATIONIQ_API_LINK");
+                        string apiKey = EnvReader.GetStringValue("LOCATIONIQ_API_KEY");
+                        foreach (KeyValuePair<int, string> entry in addrs)
+                        {
+                            url = fullLink+ apiKey + "&q=" + WebUtility.UrlEncode(entry.Value) + "&format=json";
+                            Console.WriteLine(entry.Value);
+                            Console.WriteLine(url);
+                            await PrintGetRequestToConsole(url);
+                            await Task.Delay(2000);
                         }
                         sb.Append("</table></body></html>");
                         fileContentsBrowser.DocumentText = sb.ToString();
