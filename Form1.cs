@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Net;
 using dotenv.net;
 using dotenv.net.Utilities;
@@ -46,23 +47,38 @@ public partial class Form1 : Form
             return await response.Content.ReadAsStringAsync();
         }
     }
-
+    
     private async Task PrintGetRequestToConsole(string url)
     {
         try
         {
             string response = await GetRequestAsync(url);
-            Console.WriteLine("Get Response:");
-            Console.WriteLine();
+
+            Console.WriteLine("\nGet Response:");
+            //Console.WriteLine(response + "\n");
+            //Console.WriteLine($"{response}" + Environment.NewLine);
+            using JsonDocument doc = JsonDocument.Parse(response);
             Console.WriteLine(response);
-            Console.WriteLine();
-            Console.WriteLine();
+            JsonElement root = doc.RootElement;
+            //Console.WriteLine(root.GetProperty("display_name").GetString());
+            foreach (JsonElement item in root.EnumerateArray())
+            {
+                string? dn = item.GetProperty("display_name").GetString() != null ? item.GetProperty("display_name").GetString() : "No display found";
+                if (dn != null)
+                {
+                    string[] dnA = dn.Split(", ");
+                    Console.WriteLine(dnA[5]);
+                }
+
+            }
+
         }
         catch (Exception ex)
         {
             Console.WriteLine("Error during GET: " + ex.Message);
         }
     }
+
 
     private async void uploadButton_Click(object sender, EventArgs e)
     {
@@ -151,11 +167,12 @@ public partial class Form1 : Form
                         string url = "";
                         string fullLink = EnvReader.GetStringValue("LOCATIONIQ_API_LINK");
                         string apiKey = EnvReader.GetStringValue("LOCATIONIQ_API_KEY");
+                        //main loop going throug heach site
                         foreach (KeyValuePair<int, string> entry in addrs)
                         {
-                            url = fullLink+ apiKey + "&q=" + WebUtility.UrlEncode(entry.Value) + "&format=json";
-                            Console.WriteLine(entry.Value);
-                            Console.WriteLine(url);
+                            url = fullLink + apiKey + "&q=" + WebUtility.UrlEncode(entry.Value) + "&format=json";
+                            //Console.WriteLine(entry.Value);
+                            //Console.WriteLine(url);
                             await PrintGetRequestToConsole(url);
                             await Task.Delay(2000);
                         }
