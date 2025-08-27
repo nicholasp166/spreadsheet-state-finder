@@ -20,7 +20,10 @@ public partial class Form1 : Form
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool AllocConsole();
     private WebBrowser fileContentsBrowser;
-    
+
+    // Global request counter
+    private int requestCount =4998;
+    private const int maxRequests = 4999;
 
     public Form1()
     {
@@ -40,6 +43,14 @@ public partial class Form1 : Form
 
     private async Task<string> GetRequestAsync(string url)
     {
+        if (requestCount >= maxRequests)
+        {
+            Console.WriteLine("Maximum number of requests reached. Further requests are blocked.");
+            throw new InvalidOperationException("Maximum number of requests reached. Further requests are blocked.");
+        }
+
+        requestCount++; // Increment the counter each time the function is called
+
         using (HttpClient client = new HttpClient())
         {
             HttpResponseMessage response = await client.GetAsync(url);
@@ -67,7 +78,7 @@ public partial class Form1 : Form
                 if (dn != null)
                 {
                     string[] dnA = dn.Split(", ");
-                    Console.WriteLine(dnA[5]);
+                    string zipcode = dnA[5];
                 }
 
             }
@@ -79,6 +90,74 @@ public partial class Form1 : Form
         }
     }
 
+    private async Task UpdateSpreadsheetWithZipcode(string url, string filePath)
+    {
+        try
+        {
+            string response = await GetRequestAsync(url);
+
+            using JsonDocument doc = JsonDocument.Parse(response);
+            JsonElement root = doc.RootElement;
+            string zipcode = "N/A";
+            foreach (JsonElement item in root.EnumerateArray())
+            {
+                string? dn = item.GetProperty("display_name").GetString();
+                if (!string.IsNullOrEmpty(dn))
+                {
+                    string[] dnA = dn.Split(", ");
+                    if (dnA.Length > 5)
+                        zipcode = dnA[5];
+                    else
+                        zipcode = "N/A";
+                    Console.WriteLine(zipcode);
+                }
+            }
+
+            // Block to open the Excel file and write the zipcode to the appropriate row
+            using (var package = new ExcelPackage(new FileInfo(filePath)))
+            {
+                var worksheet = package.Workbook.Worksheets[0];
+                int rows = worksheet.Dimension.Rows;
+                int cols = worksheet.Dimension.Columns;
+
+                // Find or create the "zip" column
+                int zipColIndex = -1;
+                for (int c = 1; c <= cols; c++)
+                {
+                    string header = worksheet.Cells[1, c].Text.Trim().ToLower();
+                    if (header == "zip")
+                    {
+                        zipColIndex = c;
+                        break;
+                    }
+                }
+                if (zipColIndex == -1)
+                {
+                    zipColIndex = cols + 1;
+                    worksheet.Cells[1, zipColIndex].Value = "zip";
+                }
+
+                // Find the next empty row for zipcode (assuming you want to update the last row processed)
+                // If you want to update a specific row, pass the row index as a parameter
+                for (int r = 2; r <= rows; r++)
+                {
+                    // Only update if the cell is empty
+                    if (string.IsNullOrEmpty(worksheet.Cells[r, zipColIndex].Text))
+                    {
+                        worksheet.Cells[r, zipColIndex].Value = zipcode;
+                        Console.WriteLine($"Wrote zipcode '{zipcode}' to row {r} in column {zipColIndex}");
+                        break; // Write to the first empty cell found
+                    }
+                }
+
+                package.Save();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error during GET: " + ex.Message);
+        }
+    }
 
     private async void uploadButton_Click(object sender, EventArgs e)
     {
@@ -173,7 +252,8 @@ public partial class Form1 : Form
                             url = fullLink + apiKey + "&q=" + WebUtility.UrlEncode(entry.Value) + "&format=json";
                             //Console.WriteLine(entry.Value);
                             //Console.WriteLine(url);
-                            await PrintGetRequestToConsole(url);
+                            //await PrintGetRequestToConsole(url);
+                            await UpdateSpreadsheetWithZipcode(url, filePath);
                             await Task.Delay(2000);
                         }
                         sb.Append("</table></body></html>");
